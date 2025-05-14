@@ -1,5 +1,6 @@
 ﻿#Requires AutoHotkey v2.0
 #SingleInstance Force
+#Include json.ahk
 Persistent
 
 
@@ -25,6 +26,7 @@ global LastSynced := ""
 
 SyncClipboard(*) {
     url := google_script_url
+	global LastSynced
     try {
         clipboardText := HttpGet(url)
         if clipboardText != "" {
@@ -51,6 +53,7 @@ StopSync() {
 }
 
 Log(text) {
+	global debug
 	if (debug) {
 		timestamp := FormatTime(, "yyyy-MM-dd HH:mm:ss")
 		FileAppend timestamp " - " text "`n", A_ScriptDir "\clipboard_sync.log", "UTF-8"
@@ -62,11 +65,9 @@ HttpGet(url) {
     whr.Open("GET", url, false)
     whr.Send()
     json := whr.ResponseText
-
-    ; 從 JSON 取出 clipboard 欄位
-    if RegExMatch(json, '"clipboard"\s*:\s*"(.+?)"', &match)
-        return StrReplace(match[1], "\\n", "`n")
-    return ""
+	Log("伺服器回應內容：" json)
+	obj := jxon_load(&json)
+	return obj["clipboard"]
 }
 
 ClearRemoteClipboard(*) {
