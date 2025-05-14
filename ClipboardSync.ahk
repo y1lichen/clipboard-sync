@@ -46,7 +46,7 @@ SyncClipboard(*) {
                 Log("No changes, clipboard not updated")
             }
         }
-		if (rowCount > max_clipboard_length) {
+		if (max_clipboard_length > 0 and rowCount > max_clipboard_length) {
             Log("Row count reached " rowCount ", auto clearing")
             ClearRemoteClipboard()
         }
