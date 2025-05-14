@@ -3,53 +3,64 @@
 #Include json.ahk
 Persistent
 
-
-global DEBUG := true
-; 設定檔
+global DEBUG := false
+; Config
 global google_script_url := IniRead("config.ini", "Settings", "google_script_url")
 global SET_INTERVAL := IniRead("config.ini", "Settings", "interval_ms")
+global max_clipboard_length := IniRead("config.ini", "Settings", "max_clipboard_length")
 
 TIMER_ID := SetTimer(SyncClipboard, SET_INTERVAL)
 
-; 建立系統匣選單
+; System Tray Menu
 Tray := A_TrayMenu
 Tray.Delete()
-Tray.Add("立即同步", SyncClipboard)
-Tray.Add("清空剪貼簿", ClearRemoteClipboard)
-Tray.Add("退出", (*) => ExitApp())
-Tray.Default := "立即同步"
+Tray.Add("Sync Now", SyncClipboard)
+Tray.Add("Clear Remote Clipboard", ClearRemoteClipboard)
+Tray.Add("Upload Clipboard", UploadClipboardToGoogleSheet)
+Tray.Add("Exit", (*) => ExitApp())
+Tray.Default := "Sync Now"
 Tray.ClickCount := 1
 Tray.Icon := A_WinDir "\System32\shell32.dll", 44
 
-;最後同步的遠端資料
 global LastSynced := ""
+global LastUploaded := ""
+
+OnClipboardChange(ClipboardChanged)
 
 SyncClipboard(*) {
     url := google_script_url
-	global LastSynced
+	global LastSynced, max_clipboard_length
     try {
-        clipboardText := HttpGet(url)
+        obj := HttpGet(url)
+		
+		clipboardText := obj["clipboard"]
+        rowCount := obj["rowCount"]
+		
         if clipboardText != "" {
 			if clipboardText != LastSynced {
                 A_Clipboard := clipboardText
                 LastSynced := clipboardText
-                TrayTip("同步成功", clipboardText, 1)
-                Log("同步成功：" clipboardText)
+                TrayTip("Sync Successful", clipboardText, 1)
+                Log("Sync successful: " clipboardText)
             } else {
-                Log("無變更，不更新剪貼簿")
+                Log("No changes, clipboard not updated")
             }
         }
+		if (rowCount > max_clipboard_length) {
+            Log("Row count reached " rowCount ", auto clearing")
+            ClearRemoteClipboard()
+        }
     } catch {
-		local empty_response_msg := "從伺服器獲取的剪貼簿內容為空，或者回應格式不正確。"
-        MsgBox(empty_response_msg "`n將不繼續嘗試同步。", "同步提示", "iconi")
-        Log("同步提示：" empty_response_msg " (空回應或無效資料)")
+		local empty_response_msg := "Clipboard content is empty or invalid response format."
+        MsgBox(empty_response_msg "`nSync aborted.", "Sync Notice", "iconi")
+        Log("Sync notice: " empty_response_msg " (Empty or invalid response)")
         StopSync()
     }
 }
 
 StopSync() {
     SetTimer SyncClipboard, 0
-    Log("同步已被停止")
+    Log("Sync has been stopped")
 }
 
 Log(text) {
@@ -65,27 +76,78 @@ HttpGet(url) {
     whr.Open("GET", url, false)
     whr.Send()
     json := whr.ResponseText
-	Log("伺服器回應內容：" json)
+	Log("Server response: " json)
 	obj := jxon_load(&json)
-	return obj["clipboard"]
+	return obj
+}
+
+ClipboardChanged(*) {
+    global LastUploaded, google_script_url
+
+    text := A_Clipboard
+
+    if text = "" || text = LastUploaded
+        return
+
+    try {
+        result := HttpPostClipboard(google_script_url, text)
+        if InStr(result, "OK") {
+            LastUploaded := text
+            Log("Auto upload successful: " text)
+        } else {
+            TrayTip("Upload Failed", result, 3)
+            Log("Auto upload failed: " result)
+        }
+    } catch {
+        Log("Upload error: Exception during auto upload")
+    }
 }
 
 ClearRemoteClipboard(*) {
     try {
         result := HttpPostClearCommand(google_script_url)
         if InStr(result, "CLEARED") {
-            TrayTip("已清空遠端剪貼簿", "", 1)
-            Log("使用者清空 Google Sheet")
+            TrayTip("Remote clipboard cleared", "", 1)
+            Log("User cleared Google Sheet clipboard")
         } else {
-            TrayTip("清空失敗", "未收到正確回應", 3)
-			MsgBox(result, "清空失敗", "iconi")
-            Log("清空失敗，伺服器回傳：" result)
+            TrayTip("Clear Failed", "Invalid server response", 3)
+            Log("Clear failed, server response: " result)
         }
     } catch {
-        local msg := "未知錯誤"
-        MsgBox(msg, "清空失敗", "iconi")
-        Log("清空失敗：" msg)
+        local msg := "Unknown error"
+        MsgBox(msg, "Clear Failed", "iconi")
+        Log("Clear failed: " msg)
     }
+}
+
+UploadClipboardToGoogleSheet(*) {
+    text := A_Clipboard
+    if (text != "") {
+        try {
+            result := HttpPostClipboard(google_script_url, text)
+            if InStr(result, "OK") {
+                Log("Manual upload successful: " text)
+            } else {
+                TrayTip("Upload Failed", "Server did not return OK", 3)
+                Log("Manual upload failed, server response: " result)
+            }
+        } catch {
+            local msg := "Error during upload"
+            MsgBox(msg, "Upload Error", "iconx")
+            Log("Upload error: " msg)
+        }
+    }
+}
+
+HttpPostClipboard(url, text) {
+  whr := ComObject("WinHttp.WinHttpRequest.5.1")
+  whr.Open("POST", url, false)
+  whr.SetRequestHeader("Content-Type", "application/x-www-form-urlencoded")
+  postData := "clipboard=" EncodeURIComponent(text)
+  whr.Send(postData)
+  response := whr.ResponseText
+  Log("POST response: " response)
+  return response
 }
 
 HttpPostClearCommand(url) {
@@ -96,10 +158,10 @@ HttpPostClearCommand(url) {
     return whr.ResponseText
 }
 
-
-EncodeURIComponent(str) {
-    static enc := ComObject("ScriptControl")
-    if !enc.Language
-        enc.Language := "JScript"
-    return enc.Eval("encodeURIComponent('" str "')")
+EncodeURIComponent(Url, Flags := 0x000C3000) {
+	Local CC := 4096, Esc := "", Result := ""
+	Loop
+		VarSetStrCapacity(&Esc, CC), Result := DllCall("Shlwapi.dll\UrlEscapeW", "Str", Url, "Str", &Esc, "UIntP", &CC, "UInt", Flags, "UInt")
+	Until Result != 0x80004003 ; E_POINTER
+	Return Esc
 }
