@@ -98,4 +98,12 @@ Enter your App Script Web App URL inside the shortcut:
 [Download ClipboardSync](https://github.com/y1lichen/clipboard-sync/releases/)
 
 Once launched, the app will run in the background as a tray icon.  
-You can edit `config.ini` to customize functionality.
+
+## Step 6: Customize Features via `config.ini`
+
+- Set `google_script_url` to your Google Apps Script Web App URL.
+- `interval_ms` defines the auto-sync interval in milliseconds. Set to `0` to disable auto-sync.
+- `max_clipboard_length` specifies the maximum number of clipboard entries stored remotely.  
+  If the number of rows in the Google Sheet exceeds this value, the clipboard will be automatically cleared.  
+  Set to `0` to disable auto-clearing.
+
