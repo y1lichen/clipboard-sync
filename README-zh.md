@@ -72,7 +72,7 @@ function doPost(e) {
 [下載連結](https://github.com/y1lichen/clipboard-sync/releases/)
 執行ClipboardSync後，app會在菜單欄托盤於背景執行。修改config.ini可自定義功能。
 
-## 步驟6：修改config.ini可自定義功能。
+## 步驟6：修改config.ini可自定義功能
 
 - 將google_script_url設為您的Google App Script URL。
 - interval_ms為自動同步間隔，單位為亳秒。設為0可取消自動同步。
